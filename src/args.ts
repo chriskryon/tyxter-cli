@@ -13,6 +13,7 @@ export const DEFAULT_API_URL = 'https://api.tyxter.dev';
 export type CliCommand =
   | { kind: 'help' }
   | { kind: 'listen'; options: CliListenOptions }
+  | { kind: 'listen-production'; options: CliProductionListenOptions }
   | { kind: 'print-secret'; options: CliPrintSecretOptions }
   | { kind: 'checkpoint'; options: CliCheckpointOptions }
   | { kind: 'simulate-inbound'; options: CliSimulateInboundOptions }
@@ -27,6 +28,15 @@ export interface CliListenOptions extends Omit<RunListenerOptions, 'signingSecre
   readonly fromNow: boolean;
   readonly stateDir: string;
   readonly json: boolean;
+}
+
+export interface CliProductionListenOptions
+  extends Omit<RunListenerOptions, 'listenSessionId' | 'signingSecret'> {
+  readonly signingSecret?: string;
+  readonly stateDir: string;
+  readonly json: boolean;
+  readonly ttlSeconds: number;
+  readonly reason?: string;
 }
 
 export interface CliCheckpointOptions extends CheckpointOptions {
@@ -84,6 +94,52 @@ export function parseCli(argv: readonly string[], env: NodeJS.ProcessEnv): CliCo
   }
 
   if (command === 'listen') {
+    if (subcommand === 'prod' || subcommand === 'production') {
+      const eventFilter = eventFilterOptions(parsed, env);
+      return {
+        kind: 'listen-production',
+        options: {
+          apiUrl: stringOption(parsed, env, 'api-url', 'TYXTER_API_URL') ?? DEFAULT_API_URL,
+          apiKey: requiredString(parsed, env, 'api-key', 'TYXTER_API_KEY'),
+          forwardTo: requiredString(parsed, env, 'forward-to', 'TYXTER_WEBHOOK_FORWARD_URL'),
+          signingSecret: stringOption(parsed, env, 'secret', 'TYXTER_WEBHOOK_SECRET'),
+          ...eventFilter,
+          waitMs: boundedNumberOption(parsed, env, 'wait-ms', 'TYXTER_WEBHOOK_WAIT_MS', 25_000, {
+            min: 0,
+            max: 25_000,
+          }),
+          limit: numberOption(parsed, env, 'limit', 'TYXTER_WEBHOOK_LIMIT', 20),
+          pollIntervalMs: numberOption(
+            parsed,
+            env,
+            'poll-interval-ms',
+            'TYXTER_WEBHOOK_POLL_INTERVAL_MS',
+            1_000,
+          ),
+          maxPollIntervalMs: numberOption(
+            parsed,
+            env,
+            'max-poll-interval-ms',
+            'TYXTER_WEBHOOK_MAX_POLL_INTERVAL_MS',
+            30_000,
+          ),
+          once: booleanOption(parsed, 'once'),
+          stateDir: stateDirOption(parsed, env),
+          json: booleanOption(parsed, 'json'),
+          ttlSeconds: boundedNumberOption(
+            parsed,
+            env,
+            'ttl-seconds',
+            'TYXTER_WEBHOOK_LISTEN_TTL_SECONDS',
+            300,
+            { min: 30, max: 300 },
+          ),
+          reason:
+            stringOption(parsed, env, 'reason', 'TYXTER_WEBHOOK_LISTEN_REASON') ??
+            'tyxter-cli production listen',
+        },
+      };
+    }
     if (booleanOption(parsed, 'print-secret')) {
       return {
         kind: 'print-secret',
@@ -278,6 +334,7 @@ export function helpText(): string {
     '',
     'Usage:',
     '  tyxter listen --api-key <tx_sandbox_...> --forward-to <url>',
+    '  tyxter listen prod --api-key <tx_live_...> --forward-to <url> [--ttl-seconds 300]',
     '  tyxter listen --from-now --api-key <tx_sandbox_...> --forward-to <url>',
     '  tyxter listen --events "message.received,message.delivered" --api-key <tx_sandbox_...> --forward-to <url>',
     '  tyxter listen --print-secret',
@@ -297,6 +354,7 @@ export function helpText(): string {
     '  TYXTER_WEBHOOK_FORWARD_URL=http://host.docker.internal:4242/webhooks/tyxter',
     '  TYXTER_WEBHOOK_SECRET=whsec_listen_...',
     '  TYXTER_WEBHOOK_EVENTS=message.received,message.delivered',
+    '  TYXTER_WEBHOOK_LISTEN_TTL_SECONDS=300',
     '  TYXTER_SIMULATE_CHANNEL=whatsapp',
     '  TYXTER_WEBHOOK_WAIT_MS=25000',
     '  TYXTER_WEBHOOK_MAX_POLL_INTERVAL_MS=30000',

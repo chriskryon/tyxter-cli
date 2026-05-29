@@ -1,13 +1,18 @@
 # Tyxter CLI
 
-Local developer CLI for Tyxter Messaging sandbox workflows. Today it long-polls
-Tyxter with a sandbox API key and forwards each event payload to a local URL
-with the same `tyxter-webhook-id`, `tyxter-webhook-timestamp`, and
+Local developer CLI for Tyxter Messaging webhook testing. The default workflow
+long-polls Tyxter with a sandbox API key and forwards each event payload to a
+local URL with the same `tyxter-webhook-id`, `tyxter-webhook-timestamp`, and
 `tyxter-webhook-signature` headers as normal webhook delivery.
 
 You do not need to register a normal dashboard webhook endpoint for local
 sandbox testing. The listener reads sandbox events through
 `GET /v1/webhook-events/listen` and forwards them to your app.
+
+Production listen is available only as an explicit finite diagnostic:
+`tyxter listen prod`. It creates a short-lived production listen session, polls
+with that session id, and disables the session when the command exits. Use it
+for cutover validation, not as a durable production transport.
 
 ## Quick Start
 
@@ -63,10 +68,23 @@ above.
 On Linux, use `--network=host` or an explicit host gateway if
 `host.docker.internal` is not available.
 
+For a production diagnostic with the published image, run a one-shot container
+instead of starting a long-running service:
+
+```bash
+docker run --rm \
+  -e TYXTER_API_URL=https://api.tyxter.dev \
+  -e TYXTER_API_KEY=tx_live_... \
+  -e TYXTER_WEBHOOK_FORWARD_URL=http://host.docker.internal:3000/webhooks/tyxter \
+  -e TYXTER_WEBHOOK_LISTEN_TTL_SECONDS=300 \
+  ghcr.io/tyxter-dev/tyxter-cli:latest listen prod
+```
+
 ## Commands
 
 ```bash
 tyxter listen
+tyxter listen prod --api-key tx_live_... --forward-to http://localhost:3000/webhooks/tyxter
 tyxter listen --from-now
 tyxter listen --events "message.received,message.delivered"
 tyxter listen --print-secret
@@ -96,6 +114,14 @@ backs off idle loops up to `TYXTER_WEBHOOK_MAX_POLL_INTERVAL_MS=30000`, adds
 small jitter, and honors server `429 Retry-After` responses. The Tyxter API
 still enforces abuse protection server-side; CLI timing settings are for local
 developer ergonomics, not security.
+
+`listen prod` requires a `tx_live_...` key and is intentionally finite. By
+default it opens a five-minute listen session
+(`TYXTER_WEBHOOK_LISTEN_TTL_SECONDS=300`), passes `listen_session_id` to
+`GET /v1/webhook-events/listen`, and calls
+`DELETE /v1/webhook-events/listen-sessions/:id` during cleanup. It does not
+persist production cursors; the local state file is used only for the signing
+secret that your local receiver verifies.
 
 `TYXTER_WEBHOOK_POLL_INTERVAL_MS` is the base retry/backoff interval. It is not
 a fixed tight polling loop when no events are available.
@@ -175,6 +201,17 @@ pnpm dev -- listen \
 The default local state directory is `.tyxter-cli`. Override it with
 `--state-dir` or `TYXTER_CLI_STATE_DIR`.
 
+For a one-off production diagnostic, run the finite command directly and let it
+exit:
+
+```bash
+pnpm dev -- listen prod \
+  --api-url https://api.tyxter.dev \
+  --api-key tx_live_... \
+  --forward-to http://localhost:3000/webhooks/tyxter \
+  --ttl-seconds 300
+```
+
 ## Tour Receiver Demo
 
 The demo script starts a localhost webhook receiver, runs the tour command
@@ -190,9 +227,12 @@ Optional environment variables: `TYXTER_API_URL`, `TYXTER_TOUR_PORT`,
 
 ## Security Notes
 
-- Use sandbox keys only. The listen endpoint rejects live keys.
-- The Tyxter API rate-limits sandbox listen calls and returns `Retry-After`
-  when clients exceed the server-side budget.
+- Use sandbox keys for the default listener, checkpoint, doctor, tour, simulate,
+  and local resend commands.
+- Use live keys only with `listen prod`, which opens a short-lived session and
+  disables it on exit.
+- The Tyxter API rate-limits listen calls and returns `Retry-After` when
+  clients exceed the server-side budget.
 - Do not paste `status` output into public issues; it includes the local signing secret.
 - The listener persists only its signing secret and cursor, not webhook payloads.
 - Verify signatures against the raw request body in your app.

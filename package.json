@@ -1,7 +1,7 @@
 {
   "name": "@tyxter/cli",
   "version": "0.1.0",
-  "description": "Tyxter CLI for local sandbox webhook testing.",
+  "description": "Tyxter CLI for local webhook testing.",
   "type": "module",
   "bin": {
     "tyxter": "./dist/main.js"

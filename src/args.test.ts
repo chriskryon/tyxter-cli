@@ -10,6 +10,7 @@ describe('CLI argument parsing', () => {
 
   it('shows the public API URL in help examples', () => {
     expect(helpText()).toContain('TYXTER_API_URL=https://api.tyxter.dev');
+    expect(helpText()).toContain('tyxter listen prod --api-key <tx_live_...>');
   });
 
   it('parses listen with persistent state defaults', () => {
@@ -71,6 +72,59 @@ describe('CLI argument parsing', () => {
         fromNow: true,
       },
     });
+  });
+
+  it('parses production listen sessions as an explicit finite command', () => {
+    const parsed = parseCli(
+      [
+        'listen',
+        'prod',
+        '--api-key',
+        'tx_live_test',
+        '--forward-to',
+        'http://127.0.0.1:4242/hook',
+        '--ttl-seconds',
+        '120',
+        '--reason',
+        'prod smoke test',
+        '--json',
+      ],
+      { TYXTER_WEBHOOK_EVENTS: 'message.received,message.delivered' },
+    );
+
+    expect(parsed).toMatchObject({
+      kind: 'listen-production',
+      options: {
+        apiUrl: 'https://api.tyxter.dev',
+        apiKey: 'tx_live_test',
+        forwardTo: 'http://127.0.0.1:4242/hook',
+        eventTypes: ['message.received', 'message.delivered'],
+        ttlSeconds: 120,
+        reason: 'prod smoke test',
+        waitMs: 25000,
+        pollIntervalMs: 1000,
+        maxPollIntervalMs: 30000,
+        json: true,
+      },
+    });
+  });
+
+  it('bounds production listen session TTLs to the server contract', () => {
+    expect(() =>
+      parseCli(
+        [
+          'listen',
+          'prod',
+          '--api-key',
+          'tx_live_test',
+          '--forward-to',
+          'http://127.0.0.1/hook',
+          '--ttl-seconds',
+          '301',
+        ],
+        {},
+      ),
+    ).toThrow('--ttl-seconds must be an integer from 30 to 300.');
   });
 
   it('parses multi-event listen filters', () => {

@@ -124,6 +124,27 @@ describe('webhook listener', () => {
     );
   });
 
+  it('passes production listen session ids to the listen endpoint', async () => {
+    let listenUrl = '';
+    const fetchFn: FetchLike = async (input) => {
+      listenUrl = String(input);
+      return Response.json(listenResponse([], { cursor: null }));
+    };
+
+    await pollOnce({
+      apiUrl: 'http://api.test',
+      apiKey: 'tx_live_test',
+      forwardTo: 'http://127.0.0.1:4242/webhooks/tyxter',
+      signingSecret: 'whsec_test',
+      listenSessionId: 'wls_123',
+      fetchFn,
+    });
+
+    expect(listenUrl).toBe(
+      'http://api.test/v1/webhook-events/listen?limit=20&listen_session_id=wls_123',
+    );
+  });
+
   it('backs off idle polling, uses server guidance, and resets after delivered events', async () => {
     const controller = new AbortController();
     const sleepMs: number[] = [];

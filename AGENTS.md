@@ -5,12 +5,17 @@ Guidance for AI coding agents (Codex, Claude Code, etc.) working in this repo.
 
 ## What This Repo Is
 
-Tyxter CLI is a local Node.js + TypeScript tool that long-polls Tyxter's sandbox
-listen endpoint (`GET /v1/webhook-events/listen`) and forwards each event to a
+Tyxter CLI is a local Node.js + TypeScript tool that long-polls Tyxter's listen
+endpoint (`GET /v1/webhook-events/listen`) and forwards each event to a
 local URL, re-signing the payload with the same `tyxter-webhook-id`,
 `tyxter-webhook-timestamp`, and `tyxter-webhook-signature` headers as real
 delivery. Customers use it to test webhook handlers without exposing a public
 URL or registering a dashboard endpoint.
+
+Normal listener commands use sandbox keys. The only live-key path is
+`listen prod`, an explicit finite diagnostic that creates a short-lived
+production listen session, passes `listen_session_id` while polling, and
+disables the session on exit. It is not a durable production transport.
 
 State (local signing secret + cursor) lives in the `tyxter-cli-data` Docker
 volume, or in `.tyxter-cli/` when running outside Docker.
@@ -27,6 +32,7 @@ API still owns abuse protection server-side.
 - `src/args.ts` — `parseCli` and help text. Adjust here when adding flags.
 - `src/checkpoint.ts` — advances the listen cursor without forwarding events.
 - `src/events.ts` — local replay for one sandbox listen event.
+- `src/listen-session.ts` — create/disable finite production listen sessions.
 - `src/logs.ts` — webhook delivery log tailing via `/v1/webhook-events`.
 - `src/listener.ts` — long-running poll + forward loop.
 - `src/simulate.ts` — `simulate inbound` (creates one sandbox event).
@@ -135,8 +141,10 @@ Rebuild the container (`docker compose build`) if you changed anything under
 
 ## Safety Rules
 
-- Refuse to run anything against a live key. Stop if `TYXTER_API_KEY` starts
-  with `tx_live_`.
+- Refuse live keys for normal sandbox commands (`listen`, `checkpoint`,
+  `doctor`, `tour`, `simulate inbound`, `events resend`). The only live-key
+  exception is `listen prod`; it must stay finite and must clean up the
+  production listen session on exit.
 - Treat `status` output and `.env` as sensitive — they contain the local
   signing secret and the sandbox API key. Never paste either into issues,
   PRs, commit messages, or logs you share with the user verbatim. Redact

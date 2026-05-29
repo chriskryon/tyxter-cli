@@ -5,6 +5,10 @@ import { checkpointListenCursor } from './checkpoint.js';
 import { runDoctor } from './doctor.js';
 import { resendListenEvent } from './events.js';
 import { HttpStatusError } from './http.js';
+import {
+  createWebhookListenSession,
+  disableWebhookListenSession,
+} from './listen-session.js';
 import { runListener } from './listener.js';
 import { tailWebhookLogs } from './logs.js';
 import type { WebhookEventLog } from './schemas.js';
@@ -30,6 +34,154 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (command.kind === 'listen-production') {
+      const {
+        stateDir,
+        json,
+        signingSecret: explicitSigningSecret,
+        ttlSeconds,
+        reason,
+        ...listenOptions
+      } = command.options;
+      assertProductionApiKey(listenOptions.apiKey);
+      const listenerState = await resolveListenerState({
+        stateDir,
+        signingSecret: explicitSigningSecret,
+      });
+      let session:
+        | Awaited<ReturnType<typeof createWebhookListenSession>>
+        | undefined;
+      let primaryError: unknown;
+
+      try {
+        session = await createWebhookListenSession({
+          apiUrl: listenOptions.apiUrl,
+          apiKey: listenOptions.apiKey,
+          ttlSeconds,
+          reason,
+        });
+        if (json) {
+          console.log(
+            compactJson({
+              object: 'tyxter_cli_listen_session',
+              action: 'created',
+              listen_session_id: session.id,
+              expires_at: session.expires_at,
+              trace_id: session.trace_id,
+            }),
+          );
+        } else {
+          console.log(`Opened production listen session ${session.id}`);
+          console.log(`Expires at: ${session.expires_at}`);
+          console.log(`Forwarding production webhooks to ${listenOptions.forwardTo}`);
+          console.log(`State directory: ${stateDir}`);
+          console.log(`Local signing secret: ${listenerState.signingSecret}`);
+        }
+
+        const controller = new AbortController();
+        const removeSignalHandlers = bindAbortSignals(controller);
+        const expiresInMs = Math.max(0, Date.parse(session.expires_at) - Date.now());
+        const expiryTimer = setTimeout(() => controller.abort(), expiresInMs);
+        expiryTimer.unref();
+        try {
+          await runListener({
+            ...listenOptions,
+            signingSecret: listenerState.signingSecret,
+            cursor: listenOptions.cursor,
+            listenSessionId: session.id,
+            signal: controller.signal,
+            onStart: ({ signingSecret, cursor }) => {
+              if (json) {
+                console.log(
+                  compactJson({
+                    object: 'tyxter_cli_listen_start',
+                    environment: 'production',
+                    forward_to: listenOptions.forwardTo,
+                    listen_session_id: session?.id,
+                    expires_at: session?.expires_at,
+                    signing_secret: signingSecret,
+                    cursor,
+                  }),
+                );
+                return;
+              }
+              if (cursor) console.log(`Starting after cursor: ${cursor}`);
+              console.log('The session will be disabled when the command exits.');
+            },
+            onRateLimited: ({ retryAfterMs }) => {
+              if (json) {
+                console.log(
+                  compactJson({
+                    object: 'tyxter_cli_listen_rate_limited',
+                    retry_after_ms: retryAfterMs,
+                  }),
+                );
+                return;
+              }
+              console.log(`Listen rate limited; retrying after ${retryAfterMs}ms`);
+            },
+            onBatch: ({ delivered, eventIds, cursor, hasMore }) => {
+              if (json) {
+                console.log(
+                  compactJson({
+                    object: 'tyxter_cli_listen_batch',
+                    environment: 'production',
+                    listen_session_id: session?.id,
+                    delivered,
+                    event_ids: eventIds,
+                    cursor,
+                    has_more: hasMore,
+                  }),
+                );
+                return;
+              }
+              if (delivered > 0) {
+                const ids = eventIds.length > 0 ? `; event_ids=${eventIds.join(',')}` : '';
+                console.log(
+                  `Forwarded ${delivered} event${delivered === 1 ? '' : 's'}; cursor=${cursor ?? ''}${ids}`,
+                );
+              } else if (!hasMore) {
+                console.log('No new events.');
+              }
+            },
+          });
+        } finally {
+          clearTimeout(expiryTimer);
+          removeSignalHandlers();
+        }
+      } catch (error) {
+        primaryError = error;
+        throw error;
+      } finally {
+        if (session) {
+          try {
+            const disabled = await disableWebhookListenSession({
+              apiUrl: listenOptions.apiUrl,
+              apiKey: listenOptions.apiKey,
+              listenSessionId: session.id,
+            });
+            if (json) {
+              console.log(
+                compactJson({
+                  object: 'tyxter_cli_listen_session',
+                  action: 'disabled',
+                  listen_session_id: disabled.id,
+                  status: disabled.status,
+                  disabled_at: disabled.disabled_at,
+                }),
+              );
+            } else {
+              console.log(`Disabled production listen session ${disabled.id}`);
+            }
+          } catch (cleanupError) {
+            if (!primaryError) throw cleanupError;
+            printCleanupWarning(cleanupError, json, session.id);
+          }
+        }
+      }
+      return;
+    }
+
     if (command.kind === 'listen') {
       const {
         stateDir,
@@ -38,6 +190,7 @@ async function main(): Promise<void> {
         fromNow,
         ...listenOptions
       } = command.options;
+      assertSandboxApiKey(listenOptions.apiKey, 'tyxter listen');
       const listenerState = await resolveListenerState({
         stateDir,
         signingSecret: explicitSigningSecret,
@@ -134,6 +287,7 @@ async function main(): Promise<void> {
     if (command.kind === 'checkpoint') {
       const { stateDir, json, signingSecret: explicitSigningSecret, ...checkpointOptions } =
         command.options;
+      assertSandboxApiKey(checkpointOptions.apiKey, 'tyxter checkpoint');
       const listenerState = await resolveListenerState({
         stateDir,
         signingSecret: explicitSigningSecret,
@@ -162,6 +316,7 @@ async function main(): Promise<void> {
     }
 
     if (command.kind === 'doctor') {
+      assertSandboxApiKey(command.options.apiKey, 'tyxter doctor');
       const result = await runDoctor(command.options);
       printJson(result, command.options.json);
       process.exitCode = result.ok ? 0 : 1;
@@ -176,6 +331,7 @@ async function main(): Promise<void> {
     if (command.kind === 'events-resend') {
       const { stateDir, json, signingSecret: explicitSigningSecret, ...resendOptions } =
         command.options;
+      assertSandboxApiKey(resendOptions.apiKey, 'tyxter events resend');
       const listenerState = await resolveListenerState({
         stateDir,
         signingSecret: explicitSigningSecret,
@@ -211,6 +367,7 @@ async function main(): Promise<void> {
     }
 
     if (command.kind === 'tour') {
+      assertSandboxApiKey(command.options.apiKey, 'tyxter tour');
       if (!command.options.json) {
         console.log(`Running tour against ${command.options.apiUrl}`);
         console.log(`Forwarding sandbox webhooks to ${command.options.forwardTo}`);
@@ -235,6 +392,7 @@ async function main(): Promise<void> {
       return;
     }
 
+    assertSandboxApiKey(command.options.apiKey, 'tyxter simulate inbound');
     const result = await simulateInboundMessage(command.options);
     printJson(result, command.options.json);
   } catch (error) {
@@ -254,6 +412,46 @@ function printJson(value: unknown, compact: boolean): void {
 
 function compactJson(value: unknown): string {
   return JSON.stringify(value);
+}
+
+function assertProductionApiKey(apiKey: string): void {
+  if (!apiKey.startsWith('tx_live_')) {
+    throw new Error(
+      'tyxter listen prod requires a production API key (tx_live_...). Use tyxter listen for sandbox keys.',
+    );
+  }
+}
+
+function assertSandboxApiKey(apiKey: string, commandName: string): void {
+  if (!apiKey.startsWith('tx_live_')) return;
+  throw new Error(
+    `${commandName} only supports sandbox API keys. Use tyxter listen prod for a short-lived production listen session.`,
+  );
+}
+
+function bindAbortSignals(controller: AbortController): () => void {
+  const abort = () => controller.abort();
+  process.once('SIGINT', abort);
+  process.once('SIGTERM', abort);
+  return () => {
+    process.off('SIGINT', abort);
+    process.off('SIGTERM', abort);
+  };
+}
+
+function printCleanupWarning(error: unknown, json: boolean, listenSessionId: string): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (json) {
+    console.error(
+      compactJson({
+        object: 'tyxter_cli_listen_session_cleanup_failed',
+        listen_session_id: listenSessionId,
+        error: message,
+      }),
+    );
+    return;
+  }
+  console.error(`Could not disable production listen session ${listenSessionId}: ${message}`);
 }
 
 function formatWebhookEvent(event: WebhookEventLog): string {

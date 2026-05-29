@@ -16,9 +16,11 @@ export interface ListenerOptions {
   readonly cursor?: string;
   readonly eventType?: string;
   readonly eventTypes?: readonly string[];
+  readonly listenSessionId?: string;
   readonly limit?: number;
   readonly waitMs?: number;
   readonly fetchFn?: FetchLike;
+  readonly signal?: AbortSignal;
 }
 
 export interface ForwardingListenerOptions extends ListenerOptions {
@@ -73,9 +75,13 @@ export async function readListenPage(options: ListenerOptions): Promise<ListenPa
   if (options.eventTypes && options.eventTypes.length > 0) {
     url.searchParams.set('event_types', options.eventTypes.join(','));
   }
+  if (options.listenSessionId) {
+    url.searchParams.set('listen_session_id', options.listenSessionId);
+  }
   if (options.waitMs !== undefined) url.searchParams.set('wait_ms', String(options.waitMs));
 
   const response = await fetchFn(url, {
+    signal: options.signal,
     headers: {
       authorization: `Bearer ${options.apiKey}`,
       accept: 'application/json',
@@ -132,6 +138,7 @@ export async function runListener(options: RunListenerOptions): Promise<PollResu
     try {
       result = await pollOnce({ ...options, cursor: cursor ?? undefined });
     } catch (error) {
+      if (options.signal?.aborted && isAbortError(error)) break;
       if (isListenRateLimit(error)) {
         const retryAfterMs = error.retryAfterMs ?? idleDelayMs;
         await options.onRateLimited?.({ retryAfterMs });
@@ -195,6 +202,10 @@ export async function forwardEvent(input: {
     body: rawBody,
   });
   if (!response.ok) await readFailure(response, 'local webhook forward');
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function isListenRateLimit(error: unknown): error is HttpStatusError {

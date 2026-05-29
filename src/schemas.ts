@@ -66,6 +66,23 @@ export const ListWebhookEventsResponseSchema = z.object({
 
 export type ListWebhookEventsResponse = z.infer<typeof ListWebhookEventsResponseSchema>;
 
+export const WebhookListenSessionResponseSchema = z.object({
+  id: z.string(),
+  object: z.literal('webhook_listen_session'),
+  environment: z.literal('production'),
+  status: z.enum(['active', 'disabled', 'expired']),
+  expires_at: z.string(),
+  disabled_at: z.string().nullable(),
+  created_at: z.string(),
+  trace_id: z.string(),
+  poll_endpoint: z.literal('/v1/webhook-events/listen'),
+  retrieve_endpoint: z.literal('/v1/webhook-events/listen/:outbox_event_id'),
+});
+
+export type WebhookListenSessionResponse = z.infer<
+  typeof WebhookListenSessionResponseSchema
+>;
+
 export const InboundSandboxMessageRequestSchema = z.object({
   channel: z.enum(['whatsapp', 'instagram']).optional(),
   from: z.string().min(1),
