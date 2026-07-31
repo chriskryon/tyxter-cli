@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { helpText, parseCli } from './args.js';
+import { DEFAULT_API_URL, helpText, parseCli } from './args.js';
 
 describe('CLI argument parsing', () => {
   it('parses top-level help flags', () => {
@@ -9,7 +9,8 @@ describe('CLI argument parsing', () => {
   });
 
   it('shows the public API URL in help examples', () => {
-    expect(helpText()).toContain('TYXTER_API_URL=https://api.tyxter.dev');
+    expect(DEFAULT_API_URL).toBe('https://api.tyxter.com');
+    expect(helpText()).toContain(`TYXTER_API_URL=${DEFAULT_API_URL}`);
     expect(helpText()).toContain('tyxter listen prod --api-key <tx_live_...>');
   });
 
@@ -22,7 +23,7 @@ describe('CLI argument parsing', () => {
     expect(parsed).toMatchObject({
       kind: 'listen',
       options: {
-        apiUrl: 'https://api.tyxter.dev',
+        apiUrl: DEFAULT_API_URL,
         apiKey: 'tx_sandbox_test',
         forwardTo: 'http://127.0.0.1:4242/hook',
         stateDir: '.tyxter-cli',
@@ -32,6 +33,29 @@ describe('CLI argument parsing', () => {
         maxPollIntervalMs: 30000,
         json: false,
       },
+    });
+  });
+
+  it('uses the configured API URL for the listener and lets the flag override the env', () => {
+    const baseArgs = [
+      'listen',
+      '--api-key',
+      'tx_sandbox_test',
+      '--forward-to',
+      'http://127.0.0.1:4242/hook',
+    ];
+
+    expect(parseCli(baseArgs, { TYXTER_API_URL: 'http://api.env.test' })).toMatchObject({
+      kind: 'listen',
+      options: { apiUrl: 'http://api.env.test' },
+    });
+    expect(
+      parseCli([...baseArgs, '--api-url', 'http://api.flag.test'], {
+        TYXTER_API_URL: 'http://api.env.test',
+      }),
+    ).toMatchObject({
+      kind: 'listen',
+      options: { apiUrl: 'http://api.flag.test' },
     });
   });
 
@@ -95,7 +119,7 @@ describe('CLI argument parsing', () => {
     expect(parsed).toMatchObject({
       kind: 'listen-production',
       options: {
-        apiUrl: 'https://api.tyxter.dev',
+        apiUrl: DEFAULT_API_URL,
         apiKey: 'tx_live_test',
         forwardTo: 'http://127.0.0.1:4242/hook',
         eventTypes: ['message.received', 'message.delivered'],
@@ -182,7 +206,7 @@ describe('CLI argument parsing', () => {
     expect(parsed).toEqual({
       kind: 'checkpoint',
       options: {
-        apiUrl: 'https://api.tyxter.dev',
+        apiUrl: DEFAULT_API_URL,
         apiKey: 'tx_sandbox_test',
         signingSecret: undefined,
         cursor: undefined,

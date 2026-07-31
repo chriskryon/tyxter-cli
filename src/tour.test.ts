@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCli } from './args.js';
+import { DEFAULT_API_URL, parseCli } from './args.js';
 import type { FetchLike } from './http.js';
 import { FORWARDED_WEBHOOK_HEADERS } from './listener.js';
 import { verifyWebhookSignature } from './signature.js';
@@ -20,7 +20,7 @@ describe('tour command', () => {
     expect(parsed).toMatchObject({
       kind: 'tour',
       options: {
-        apiUrl: 'https://api.tyxter.dev',
+        apiUrl: DEFAULT_API_URL,
         apiKey: 'tx_sandbox_test',
         forwardTo: 'http://127.0.0.1:4242/hook',
         signingSecret: 'whsec_tour',

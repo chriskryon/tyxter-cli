@@ -43,7 +43,7 @@ Run the image directly:
 
 ```bash
 docker run --rm \
-  -e TYXTER_API_URL=https://api.tyxter.dev \
+  -e TYXTER_API_URL=https://api.tyxter.com \
   -e TYXTER_API_KEY=tx_sandbox_... \
   -e TYXTER_WEBHOOK_FORWARD_URL=http://host.docker.internal:3000/webhooks/tyxter \
   -v tyxter-cli-data:/data \
@@ -73,7 +73,7 @@ instead of starting a long-running service:
 
 ```bash
 docker run --rm \
-  -e TYXTER_API_URL=https://api.tyxter.dev \
+  -e TYXTER_API_URL=https://api.tyxter.com \
   -e TYXTER_API_KEY=tx_live_... \
   -e TYXTER_WEBHOOK_FORWARD_URL=http://host.docker.internal:3000/webhooks/tyxter \
   -e TYXTER_WEBHOOK_LISTEN_TTL_SECONDS=300 \
@@ -192,7 +192,7 @@ phone numbers, and payloads.
 ```bash
 pnpm install
 pnpm dev -- listen \
-  --api-url https://api.tyxter.dev \
+  --api-url https://api.tyxter.com \
   --api-key tx_sandbox_... \
   --forward-to http://localhost:3000/webhooks/tyxter \
   --from-now
@@ -206,7 +206,7 @@ exit:
 
 ```bash
 pnpm dev -- listen prod \
-  --api-url https://api.tyxter.dev \
+  --api-url https://api.tyxter.com \
   --api-key tx_live_... \
   --forward-to http://localhost:3000/webhooks/tyxter \
   --ttl-seconds 300

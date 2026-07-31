@@ -8,7 +8,7 @@ import { DEFAULT_STATE_DIR } from './state.js';
 import type { StatusOptions } from './status.js';
 import type { TourOptions } from './tour.js';
 
-export const DEFAULT_API_URL = 'https://api.tyxter.dev';
+export const DEFAULT_API_URL = 'https://api.tyxter.com';
 
 export type CliCommand =
   | { kind: 'help' }
@@ -349,7 +349,7 @@ export function helpText(): string {
     '  tyxter status --print-secret',
     '',
     'Environment:',
-    '  TYXTER_API_URL=https://api.tyxter.dev',
+    `  TYXTER_API_URL=${DEFAULT_API_URL}`,
     '  TYXTER_API_KEY=tx_sandbox_...',
     '  TYXTER_WEBHOOK_FORWARD_URL=http://host.docker.internal:4242/webhooks/tyxter',
     '  TYXTER_WEBHOOK_SECRET=whsec_listen_...',
