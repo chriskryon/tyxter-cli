@@ -69,6 +69,7 @@ export async function runTour(options: TourOptions): Promise<TourResult> {
       eventType: 'message.received',
       limit: 100,
       cursor: cursor ?? undefined,
+      shouldForward: (event) => event.source_id === simulated.id,
       fetchFn: options.fetchFn,
       now: options.now,
     });

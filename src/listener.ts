@@ -27,6 +27,7 @@ export interface ForwardingListenerOptions extends ListenerOptions {
   readonly forwardTo: string;
   readonly signingSecret: string;
   readonly now?: () => number;
+  readonly shouldForward?: (event: ListenWebhookEventsResponse['data'][number]) => boolean;
 }
 
 export interface RunListenerOptions extends ForwardingListenerOptions {
@@ -103,6 +104,7 @@ export async function pollOnce(options: ForwardingListenerOptions): Promise<Poll
   const fetchFn = options.fetchFn ?? fetch;
   const eventIds: string[] = [];
   for (const event of page.data) {
+    if (options.shouldForward && !options.shouldForward(event)) continue;
     await forwardEvent({
       eventId: event.id,
       payload: event.payload,
@@ -115,7 +117,7 @@ export async function pollOnce(options: ForwardingListenerOptions): Promise<Poll
   }
 
   return {
-    delivered: page.data.length,
+    delivered: eventIds.length,
     eventIds,
     cursor: page.cursor,
     hasMore: page.hasMore,

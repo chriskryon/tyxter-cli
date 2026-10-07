@@ -101,6 +101,46 @@ describe('tour command', () => {
           object: 'webhook_event_listen',
           data: [
             {
+              id: 'out_concurrent',
+              object: 'webhook_event',
+              endpoint_id: null,
+              type: 'message.received',
+              source_type: 'message',
+              source_id: 'msg_concurrent',
+              payload: {
+                id: 'evt_out_concurrent',
+                type: 'message.received',
+                created_at: '2026-05-09T12:00:00.000Z',
+                environment: 'sandbox',
+                trace_id: 'trc_concurrent',
+                data: {
+                  message_id: 'msg_concurrent',
+                  content: {
+                    type: 'text',
+                    text: { body: 'another message' },
+                  },
+                },
+              },
+              status: 'pending',
+              trace_id: 'trc_concurrent',
+              created_at: '2026-05-09T12:00:00.000Z',
+              attempts: [],
+            },
+          ],
+          has_more: false,
+          next_cursor: 'cur_concurrent',
+        });
+      }
+
+      if (
+        url ===
+        'http://api.test/v1/webhook-events/listen?limit=100&cursor=cur_concurrent&event_type=message.received'
+      ) {
+        listenCalls += 1;
+        return Response.json({
+          object: 'webhook_event_listen',
+          data: [
+            {
               id: 'out_tour',
               object: 'webhook_event',
               endpoint_id: null,
@@ -110,7 +150,7 @@ describe('tour command', () => {
               payload: {
                 id: 'evt_out_tour',
                 type: 'message.received',
-                created_at: '2026-05-09T12:00:00.000Z',
+                created_at: '2026-05-09T12:00:01.000Z',
                 environment: 'sandbox',
                 trace_id: 'trc_tour',
                 data: {
@@ -123,7 +163,7 @@ describe('tour command', () => {
               },
               status: 'pending',
               trace_id: 'trc_tour',
-              created_at: '2026-05-09T12:00:00.000Z',
+              created_at: '2026-05-09T12:00:01.000Z',
               attempts: [],
             },
           ],
@@ -146,18 +186,18 @@ describe('tour command', () => {
       from: '+15551230000',
       to: '+15557650000',
       body: 'hello tour',
-      pollAttempts: 1,
+      pollAttempts: 2,
       pollIntervalMs: 1,
       now: () => 1_779_444_000_000,
       fetchFn,
     });
 
     expect(result).toMatchObject({
-      attempts: 1,
+      attempts: 2,
       listen: { delivered: 1, cursor: 'cur_tour', hasMore: false },
       simulated: { id: 'msg_tour' },
     });
-    expect(listenCalls).toBe(2);
+    expect(listenCalls).toBe(3);
     expect(
       JSON.parse(calls.find((call) => call.url.endsWith('/inbound-messages'))?.body ?? '{}'),
     ).toMatchObject({
@@ -171,7 +211,7 @@ describe('tour command', () => {
       JSON.stringify({
         id: 'evt_out_tour',
         type: 'message.received',
-        created_at: '2026-05-09T12:00:00.000Z',
+        created_at: '2026-05-09T12:00:01.000Z',
         environment: 'sandbox',
         trace_id: 'trc_tour',
         data: {
