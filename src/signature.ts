@@ -20,6 +20,8 @@ export function verifyWebhookSignature(input: {
   if (Math.abs(nowSeconds - timestampSeconds) > toleranceSeconds) return false;
 
   const expected = signWebhook(input.secret, input.timestamp, input.rawBody);
-  if (expected.length !== input.signature.length) return false;
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(input.signature));
+  const expectedBuffer = Buffer.from(expected);
+  const signatureBuffer = Buffer.from(input.signature);
+  if (expectedBuffer.length !== signatureBuffer.length) return false;
+  return timingSafeEqual(expectedBuffer, signatureBuffer);
 }
