@@ -211,9 +211,17 @@ async function main(): Promise<void> {
           cursor: startCursor,
           updatedAt: new Date().toISOString(),
         });
-        console.log(
-          `Checkpointed ${checkpoint.skipped} existing event${checkpoint.skipped === 1 ? '' : 's'}; cursor=${startCursor ?? ''}`,
-        );
+        if (json) {
+          console.log(compactJson({
+            object: 'tyxter_cli_listen_checkpoint',
+            skipped: checkpoint.skipped,
+            cursor: startCursor,
+          }));
+        } else {
+          console.log(
+            `Checkpointed ${checkpoint.skipped} existing event${checkpoint.skipped === 1 ? '' : 's'}; cursor=${startCursor ?? ''}`,
+          );
+        }
       }
       const controller = new AbortController();
       process.once('SIGINT', () => controller.abort());

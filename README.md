@@ -134,7 +134,9 @@ so the CLI receives one argument.
 `listen --print-secret` and `status --print-secret` print only the local signing
 secret and exit, which is useful for wiring a receiver without exposing the
 full state file. `listen --json` and `logs tail --json` write JSON Lines for
-streaming consumers; finite commands use compact JSON when `--json` is set.
+streaming consumers. With `listen --from-now --json`, the checkpoint is emitted
+as a `tyxter_cli_listen_checkpoint` line before the listener starts. Finite
+commands use compact JSON when `--json` is set.
 
 `events resend` replays one sandbox listen event to a local `--forward-to`
 target using the CLI signing secret. It accepts either the raw listen event id
