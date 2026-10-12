@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FORWARDED_WEBHOOK_HEADERS, pollOnce, runListener } from './listener.js';
+import { FORWARDED_WEBHOOK_HEADERS, forwardEvent, pollOnce, runListener } from './listener.js';
 import type { FetchLike } from './http.js';
 import { verifyWebhookSignature } from './signature.js';
 
@@ -260,6 +260,58 @@ describe('webhook listener', () => {
 
     expect(listenCalls).toBe(2);
     expect(sleepMs).toEqual([1500, 3000]);
+  });
+
+  it('stops while a local webhook forward is in flight', async () => {
+    const controller = new AbortController();
+    let forwardStarted!: () => void;
+    const started = new Promise<void>((resolve) => { forwardStarted = resolve; });
+    const fetchFn: FetchLike = async (input, init) => {
+      if (String(input).startsWith('http://api.test/')) {
+        return Response.json(listenResponse([{ id: 'whev_stop', payload: { ok: true } }], {
+          cursor: 'cur_stop',
+        }));
+      }
+      forwardStarted();
+      if (!init?.signal) throw new Error('Forward request has no abort signal');
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    };
+
+    const running = runListener({
+      apiUrl: 'http://api.test',
+      apiKey: 'tx_sandbox_test',
+      forwardTo: 'http://local.test/webhook',
+      signingSecret: 'whsec_test',
+      pollIntervalMs: 1000,
+      maxPollIntervalMs: 30_000,
+      once: false,
+      signal: controller.signal,
+      fetchFn,
+    });
+    await started;
+    controller.abort();
+
+    await expect(running).resolves.toMatchObject({ delivered: 0, cursor: null });
+  });
+
+  it('times out a local webhook forward that never responds', async () => {
+    const fetchFn: FetchLike = async (_input, init) => {
+      if (!init?.signal) throw new Error('Forward request has no abort signal');
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+      });
+    };
+
+    await expect(forwardEvent({
+      eventId: 'whev_timeout',
+      payload: { ok: true },
+      forwardTo: 'http://local.test/webhook',
+      signingSecret: 'whsec_test',
+      fetchFn,
+      timeoutMs: 20,
+    })).rejects.toMatchObject({ name: 'TimeoutError' });
   });
 });
 

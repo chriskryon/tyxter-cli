@@ -10,6 +10,8 @@ export const FORWARDED_WEBHOOK_HEADERS = {
   SIGNATURE: 'tyxter-webhook-signature',
 } as const;
 
+const DEFAULT_FORWARD_TIMEOUT_MS = 30_000;
+
 export interface ListenerOptions {
   readonly apiUrl: string;
   readonly apiKey: string;
@@ -111,6 +113,7 @@ export async function pollOnce(options: ForwardingListenerOptions): Promise<Poll
       forwardTo: options.forwardTo,
       signingSecret: options.signingSecret,
       fetchFn,
+      signal: options.signal,
       now: options.now,
     });
     eventIds.push(event.id);
@@ -188,13 +191,18 @@ export async function forwardEvent(input: {
   forwardTo: string;
   signingSecret: string;
   fetchFn: FetchLike;
+  signal?: AbortSignal;
+  timeoutMs?: number;
   now?: () => number;
 }): Promise<void> {
   const rawBody = JSON.stringify(input.payload);
   const timestamp = String(Math.floor((input.now?.() ?? Date.now()) / 1000));
   const signature = signWebhook(input.signingSecret, timestamp, rawBody);
+  const timeoutSignal = AbortSignal.timeout(input.timeoutMs ?? DEFAULT_FORWARD_TIMEOUT_MS);
+  const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
   const response = await input.fetchFn(input.forwardTo, {
     method: 'POST',
+    signal,
     headers: {
       'content-type': 'application/json',
       [FORWARDED_WEBHOOK_HEADERS.ID]: input.eventId,
