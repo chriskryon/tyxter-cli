@@ -115,8 +115,10 @@ function verifySignature(secretValue, timestamp, rawBody, signature) {
   const expected = createHmac('sha256', secretValue)
     .update(`${timestamp}.${rawBody}`)
     .digest('hex');
-  if (expected.length !== signature.length) return false;
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  const expectedBuffer = Buffer.from(expected);
+  const signatureBuffer = Buffer.from(signature);
+  if (expectedBuffer.length !== signatureBuffer.length) return false;
+  return timingSafeEqual(expectedBuffer, signatureBuffer);
 }
 
 function readPort(value, fallback) {
