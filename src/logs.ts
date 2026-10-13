@@ -71,10 +71,20 @@ export async function tailWebhookLogs(
     await sleepWithOptions(options, options.pollIntervalMs);
     if (options.signal?.aborted) break;
 
-    const page = await readWebhookEventsPage({ ...options, limit: 100 });
-    const next = page.data.filter((event) => !seen.has(event.id)).reverse();
-    for (const event of page.data) seen.add(event.id);
-    for (const event of next) {
+    const next: WebhookEventLog[] = [];
+    let startingAfter = options.startingAfter;
+    while (!options.signal?.aborted) {
+      const page = await readWebhookEventsPage({ ...options, limit: 100, startingAfter });
+      const firstSeenIndex = page.data.findIndex((event) => seen.has(event.id));
+      next.push(...(firstSeenIndex >= 0 ? page.data.slice(0, firstSeenIndex) : page.data));
+      if (firstSeenIndex >= 0 || !page.has_more) break;
+      if (!page.next_cursor || page.next_cursor === startingAfter) {
+        throw new Error('Webhook events list pagination did not advance.');
+      }
+      startingAfter = page.next_cursor;
+    }
+    for (const event of next.reverse()) {
+      seen.add(event.id);
       await options.onEvent?.(event);
       emitted += 1;
     }

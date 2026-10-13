@@ -55,6 +55,61 @@ describe('webhook logs tail', () => {
     expect(result.emitted).toBe(1);
   });
 
+  it('reads every page of new events before reaching a previously seen event', async () => {
+    const controller = new AbortController();
+    const emitted: string[] = [];
+    const urls: string[] = [];
+    let sleeps = 0;
+    const fetchFn: FetchLike = async (input) => {
+      const url = new URL(String(input));
+      urls.push(url.toString());
+      const cursor = url.searchParams.get('starting_after');
+      if (urls.length === 1) return Response.json(listResponse([event('old')]));
+      if (cursor === 'page_2') {
+        return Response.json({
+          ...listResponse(Array.from({ length: 100 }, (_, i) => event(`new_${100 - i}`))),
+          has_more: true,
+          next_cursor: 'page_3',
+        });
+      }
+      if (cursor === 'page_3') {
+        return Response.json({
+          ...listResponse([event('old'), event('historical')]),
+          has_more: true,
+          next_cursor: 'older_history',
+        });
+      }
+      if (cursor) throw new Error(`Unexpected page ${cursor}`);
+      return Response.json({
+        ...listResponse(Array.from({ length: 100 }, (_, i) => event(`new_${200 - i}`))),
+        has_more: true,
+        next_cursor: 'page_2',
+      });
+    };
+
+    const result = await tailWebhookLogs({
+      apiUrl: 'http://api.test',
+      apiKey: 'tx_sandbox_test',
+      last: 0,
+      pollIntervalMs: 1000,
+      signal: controller.signal,
+      fetchFn,
+      sleep: async () => {
+        sleeps += 1;
+        if (sleeps === 2) controller.abort();
+      },
+      onEvent: (entry) => {
+        emitted.push(entry.id);
+      },
+    });
+
+    expect(result.emitted).toBe(200);
+    expect(emitted).toEqual(Array.from({ length: 200 }, (_, i) => `new_${i + 1}`));
+    expect(urls.map((url) => new URL(url).searchParams.get('starting_after'))).toEqual([
+      null, null, 'page_2', 'page_3',
+    ]);
+  });
+
   it('prints historical --last events oldest first before tailing', async () => {
     const controller = new AbortController();
     const emitted: string[] = [];
