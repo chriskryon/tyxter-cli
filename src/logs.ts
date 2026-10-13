@@ -5,6 +5,8 @@ import {
   type WebhookEventLog,
 } from './schemas.js';
 
+const PAGE_LIMIT = 100;
+
 export interface WebhookEventListOptions {
   readonly apiUrl: string;
   readonly apiKey: string;
@@ -56,15 +58,14 @@ export async function tailWebhookLogs(
 ): Promise<TailWebhookLogsResult> {
   const seen = new Set<string>();
   let emitted = 0;
-  const initialLimit = options.last > 0 ? options.last : 100;
-  const initial = await readWebhookEventsPage({ ...options, limit: initialLimit });
+  // Seed a full page even for a small --last so the first poll does not mistake
+  // older history for new events.
+  const initial = await readWebhookEventsPage({ ...options, limit: PAGE_LIMIT });
   for (const event of initial.data) seen.add(event.id);
 
-  if (options.last > 0) {
-    for (const event of [...initial.data].reverse()) {
-      await options.onEvent?.(event);
-      emitted += 1;
-    }
+  for (const event of initial.data.slice(0, options.last).reverse()) {
+    await options.onEvent?.(event);
+    emitted += 1;
   }
 
   while (!options.signal?.aborted) {
@@ -74,10 +75,11 @@ export async function tailWebhookLogs(
     const next: WebhookEventLog[] = [];
     let startingAfter = options.startingAfter;
     while (!options.signal?.aborted) {
-      const page = await readWebhookEventsPage({ ...options, limit: 100, startingAfter });
-      const firstSeenIndex = page.data.findIndex((event) => seen.has(event.id));
-      next.push(...(firstSeenIndex >= 0 ? page.data.slice(0, firstSeenIndex) : page.data));
-      if (firstSeenIndex >= 0 || !page.has_more) break;
+      const page = await readWebhookEventsPage({ ...options, limit: PAGE_LIMIT, startingAfter });
+      // Filter rather than stop at the first seen event: an older event can newly match
+      // the list (for example once it exhausts its retries under --status failed).
+      next.push(...page.data.filter((event) => !seen.has(event.id)));
+      if (!page.has_more || page.data.some((event) => seen.has(event.id))) break;
       if (!page.next_cursor || page.next_cursor === startingAfter) {
         throw new Error('Webhook events list pagination did not advance.');
       }
