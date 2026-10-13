@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { FORWARDED_WEBHOOK_HEADERS, forwardEvent, pollOnce, runListener } from './listener.js';
 import type { FetchLike } from './http.js';
@@ -311,7 +311,55 @@ describe('webhook listener', () => {
       signingSecret: 'whsec_test',
       fetchFn,
       timeoutMs: 20,
-    })).rejects.toMatchObject({ name: 'TimeoutError' });
+    })).rejects.toMatchObject({
+      name: 'TimeoutError',
+      message: 'local webhook forward timed out after 20ms',
+    });
+  });
+
+  it('does not forward when the listener signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchFn: FetchLike = async (_input, init) => {
+      if (init?.signal?.aborted) throw init.signal.reason;
+      return new Response('ok');
+    };
+
+    await expect(forwardEvent({
+      eventId: 'whev_aborted',
+      payload: { ok: true },
+      forwardTo: 'http://local.test/webhook',
+      signingSecret: 'whsec_test',
+      fetchFn,
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('releases the listener signal after each forward', async () => {
+    const { signal } = new AbortController();
+    const added = vi.spyOn(signal, 'addEventListener');
+    const removed = vi.spyOn(signal, 'removeEventListener');
+    let calls = 0;
+    const fetchFn: FetchLike = async () => {
+      calls += 1;
+      return calls === 1 ? new Response('ok') : new Response('nope', { status: 500 });
+    };
+    const forward = () => forwardEvent({
+      eventId: 'whev_release',
+      payload: { ok: true },
+      forwardTo: 'http://local.test/webhook',
+      signingSecret: 'whsec_test',
+      fetchFn,
+      signal,
+    });
+
+    await forward();
+    await expect(forward()).rejects.toMatchObject({ status: 500 });
+
+    expect(added).toHaveBeenCalledTimes(2);
+    expect(removed.mock.calls.map(([, listener]) => listener)).toEqual(
+      added.mock.calls.map(([, listener]) => listener),
+    );
   });
 });
 
